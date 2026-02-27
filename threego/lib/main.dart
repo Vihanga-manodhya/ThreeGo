@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 
 void main() {
@@ -7,116 +9,350 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      title: 'Carrom Blitz',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.brown)),
+      home: const CarromHomePage(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+// --- DATA MODEL FOR CARROM PIECES ---
+class CarromPiece {
+  Offset position;
+  Offset velocity;
+  final double radius;
+  final Color color;
+  final bool isStriker;
+  bool isPocketed = false;
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  CarromPiece({
+    required this.position,
+    this.velocity = Offset.zero,
+    required this.radius,
+    required this.color,
+    this.isStriker = false,
+  });
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class CarromHomePage extends StatefulWidget {
+  const CarromHomePage({super.key});
 
-  void _incrementCounter() {
+  @override
+  State<CarromHomePage> createState() => _CarromHomePageState();
+}
+
+// Notice the SingleTickerProviderStateMixin: This gives us the 60fps Game Loop!
+class _CarromHomePageState extends State<CarromHomePage> with SingleTickerProviderStateMixin {
+  late AnimationController _gameLoop;
+  
+  // Board & Physics State
+  bool _isInitialized = false;
+  double _boardSize = 0;
+  List<CarromPiece> pieces = [];
+  
+  // Interaction State
+  bool _isAiming = false;
+  Offset _dragPosition = Offset.zero;
+  CarromPiece? _striker;
+
+  @override
+  void initState() {
+    super.initState();
+    // The game loop runs constantly, updating physics
+    _gameLoop = AnimationController(vsync: this, duration: const Duration(days: 365))
+      ..addListener(_updatePhysics)
+      ..forward();
+  }
+
+  // --- 1. SETUP THE BOARD ---
+  void _initBoard(double size) {
+    _boardSize = size;
+    final center = Offset(size / 2, size / 2);
+    final pieceRadius = size * 0.03;
+    final strikerRadius = size * 0.045;
+
+    pieces.clear();
+
+    // Queen (Red)
+    pieces.add(CarromPiece(position: center, radius: pieceRadius, color: Colors.red[700]!));
+
+    // Whites and Blacks around the Queen
+    final offsetDist = pieceRadius * 2.1;
+    final positions = [
+      Offset(center.dx, center.dy - offsetDist), // Top
+      Offset(center.dx, center.dy + offsetDist), // Bottom
+      Offset(center.dx - offsetDist, center.dy), // Left
+      Offset(center.dx + offsetDist, center.dy), // Right
+    ];
+    
+    for (int i = 0; i < positions.length; i++) {
+      pieces.add(CarromPiece(
+        position: positions[i], 
+        radius: pieceRadius, 
+        color: i % 2 == 0 ? Colors.white : Colors.black87,
+      ));
+    }
+
+    // Striker at the bottom baseline
+    _striker = CarromPiece(
+      position: Offset(center.dx, size * 0.8),
+      radius: strikerRadius,
+      color: Colors.amber[200]!,
+      isStriker: true,
+    );
+    pieces.add(_striker!);
+
+    _isInitialized = true;
+  }
+
+  // --- 2. GAME LOOP & PHYSICS ---
+  void _updatePhysics() {
+    if (!_isInitialized) return;
+
+    final frameThickness = _boardSize * 0.06;
+    final minBound = frameThickness;
+    final maxBound = _boardSize - frameThickness;
+    final pocketRadius = _boardSize * 0.055;
+    
+    // Pocket Centers
+    final pockets = [
+      Offset(minBound, minBound),
+      Offset(maxBound, minBound),
+      Offset(minBound, maxBound),
+      Offset(maxBound, maxBound),
+    ];
+
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      for (int i = 0; i < pieces.length; i++) {
+        var p = pieces[i];
+        if (p.isPocketed) continue;
+
+        // Apply Velocity
+        p.position += p.velocity;
+        
+        // Apply Friction (Slows down over time)
+        p.velocity *= 0.98; 
+        if (p.velocity.distance < 0.1) p.velocity = Offset.zero;
+
+        // Wall Bouncing
+        if (p.position.dx - p.radius < minBound) {
+          p.position = Offset(minBound + p.radius, p.position.dy);
+          p.velocity = Offset(-p.velocity.dx, p.velocity.dy);
+        } else if (p.position.dx + p.radius > maxBound) {
+          p.position = Offset(maxBound - p.radius, p.position.dy);
+          p.velocity = Offset(-p.velocity.dx, p.velocity.dy);
+        }
+        
+        if (p.position.dy - p.radius < minBound) {
+          p.position = Offset(p.position.dx, minBound + p.radius);
+          p.velocity = Offset(p.velocity.dx, -p.velocity.dy);
+        } else if (p.position.dy + p.radius > maxBound) {
+          p.position = Offset(p.position.dx, maxBound - p.radius);
+          p.velocity = Offset(p.velocity.dx, -p.velocity.dy);
+        }
+
+        // Check if fallen into a pocket
+        for (var pocket in pockets) {
+          if ((p.position - pocket).distance < pocketRadius) {
+            if (p.isStriker) {
+              // Foul! Reset striker
+              p.position = Offset(_boardSize / 2, _boardSize * 0.8);
+              p.velocity = Offset.zero;
+            } else {
+              p.isPocketed = true;
+            }
+          }
+        }
+
+        // Piece-to-Piece Collisions
+        for (int j = i + 1; j < pieces.length; j++) {
+          var p2 = pieces[j];
+          if (p2.isPocketed) continue;
+
+          Offset delta = p.position - p2.position;
+          double dist = delta.distance;
+          double minFocalDist = p.radius + p2.radius;
+
+          if (dist < minFocalDist && dist > 0) {
+            // Push pieces apart so they don't get stuck inside each other
+            double overlap = minFocalDist - dist;
+            Offset push = (delta / dist) * (overlap / 2);
+            p.position += push;
+            p2.position -= push;
+
+            // Transfer Momentum (Elastic Collision)
+            Offset normal = delta / dist;
+            double p1VelAlongNormal = p.velocity.dx * normal.dx + p.velocity.dy * normal.dy;
+            double p2VelAlongNormal = p2.velocity.dx * normal.dx + p2.velocity.dy * normal.dy;
+
+            double restitution = 0.9; // Bounciness
+            double impulse = (p1VelAlongNormal - p2VelAlongNormal) * restitution;
+
+            p.velocity -= normal * impulse;
+            p2.velocity += normal * impulse;
+          }
+        }
+      }
     });
+  }
+
+  // --- 3. CONTROLS (SLINGSHOT) ---
+  void _onPanStart(DragStartDetails details) {
+    if (_striker == null) return;
+    // Check if touching the striker
+    if ((details.localPosition - _striker!.position).distance < _striker!.radius * 2) {
+      _isAiming = true;
+      _dragPosition = details.localPosition;
+    }
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    if (_isAiming) {
+      setState(() {
+        _dragPosition = details.localPosition;
+      });
+    }
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    if (_isAiming && _striker != null) {
+      // Calculate slingshot velocity (opposite of drag direction)
+      Offset pullVector = _striker!.position - _dragPosition;
+      
+      // Cap the maximum power
+      if (pullVector.distance > 100) {
+        pullVector = (pullVector / pullVector.distance) * 100;
+      }
+      
+      _striker!.velocity = pullVector * 0.3; // 0.3 is the power multiplier
+      _isAiming = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _gameLoop.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
+      backgroundColor: Colors.grey[900],
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('Carrom Play', style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.brown[900],
       ),
       body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: AspectRatio(
+            aspectRatio: 1.0,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (!_isInitialized) {
+                  // Initialize board pieces only once we know the exact screen pixel width
+                  _initBoard(constraints.maxWidth);
+                }
+
+                return GestureDetector(
+                  onPanStart: _onPanStart,
+                  onPanUpdate: _onPanUpdate,
+                  onPanEnd: _onPanEnd,
+                  child: CustomPaint(
+                    size: Size(constraints.maxWidth, constraints.maxWidth),
+                    painter: CarromBoardPainter(
+                      pieces: pieces,
+                      aimingStart: _isAiming ? _striker?.position : null,
+                      aimingEnd: _isAiming ? _dragPosition : null,
+                    ),
+                  ),
+                );
+              },
             ),
-          ],
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
       ),
     );
   }
+}
+
+// --- 4. DRAWING THE BOARD AND PIECES ---
+class CarromBoardPainter extends CustomPainter {
+  final List<CarromPiece> pieces;
+  final Offset? aimingStart;
+  final Offset? aimingEnd;
+
+  CarromBoardPainter({required this.pieces, this.aimingStart, this.aimingEnd});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final width = size.width;
+    final paint = Paint();
+
+    // 1. Board Wood Frame
+    paint.color = const Color(0xFF4A2F1D);
+    paint.style = PaintingStyle.fill;
+    canvas.drawRect(Rect.fromLTWH(0, 0, width, width), paint);
+
+    // 2. Play Surface
+    final frameThickness = width * 0.06;
+    paint.color = const Color(0xFFF3E5AB);
+    canvas.drawRect(
+      Rect.fromLTWH(frameThickness, frameThickness, width - (frameThickness * 2), width - (frameThickness * 2)),
+      paint,
+    );
+
+    // 3. Pockets
+    paint.color = Colors.black;
+    final pocketRadius = width * 0.045;
+    final pocketOffset = frameThickness + pocketRadius + (width * 0.01);
+    final offsets = [
+      Offset(pocketOffset, pocketOffset),
+      Offset(width - pocketOffset, pocketOffset),
+      Offset(pocketOffset, width - pocketOffset),
+      Offset(width - pocketOffset, width - pocketOffset),
+    ];
+    for (var offset in offsets) canvas.drawCircle(offset, pocketRadius, paint);
+
+    // Center Circles
+    final center = Offset(width / 2, width / 2);
+    paint.color = Colors.black;
+    paint.style = PaintingStyle.stroke;
+    paint.strokeWidth = 2.0;
+    canvas.drawCircle(center, width * 0.12, paint);
+    canvas.drawCircle(center, width * 0.03, paint);
+
+    // 4. Draw Aiming Line (Slingshot)
+    if (aimingStart != null && aimingEnd != null) {
+      paint.color = Colors.blueAccent.withOpacity(0.5);
+      paint.strokeWidth = 4.0;
+      // Draw line from striker in the OPPOSITE direction of the drag
+      Offset pullVector = aimingStart! - aimingEnd!;
+      canvas.drawLine(aimingStart!, aimingStart! + pullVector, paint);
+    }
+
+    // 5. Draw the Carrom Pieces
+    paint.style = PaintingStyle.fill;
+    for (var piece in pieces) {
+      if (piece.isPocketed) continue; // Don't draw if it fell in a hole!
+      
+      paint.color = piece.color;
+      canvas.drawCircle(piece.position, piece.radius, paint);
+      
+      // Draw an inner ring on the pieces to make them look 3D/realistic
+      paint.color = Colors.white.withOpacity(0.3);
+      paint.style = PaintingStyle.stroke;
+      paint.strokeWidth = 2.0;
+      canvas.drawCircle(piece.position, piece.radius * 0.7, paint);
+      paint.style = PaintingStyle.fill; // Reset for next piece
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true; // Always repaint for 60fps
 }
