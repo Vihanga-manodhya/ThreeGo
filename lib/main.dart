@@ -16,7 +16,6 @@ class ProCarromApp extends StatelessWidget {
   }
 }
 
-// Logic Enums
 enum PieceType { white, black, queen, striker }
 enum PlayerTurn { whitePlayer, blackPlayer }
 enum GamePhase { placing, aiming, moving, evaluating, gameOver }
@@ -76,7 +75,7 @@ class _CarromMatchState extends State<CarromMatch> with SingleTickerProviderStat
   void _initBoard(double size) {
     _boardSize = size;
     final center = Offset(size * 0.5, size * 0.5);
-    final pr = size * 0.026; // Slightly smaller for better spacing
+    final pr = size * 0.026; 
     pieces.clear();
     _whiteInHoles = 0;
     _blackInHoles = 0;
@@ -84,7 +83,7 @@ class _CarromMatchState extends State<CarromMatch> with SingleTickerProviderStat
     // Queen
     pieces.add(CarromPiece(position: center, radius: pr, type: PieceType.queen));
     
-    // Pieces arrangement (Standard Honeycomb Circle)
+    // Standard Piece Arrangement
     for (int i = 0; i < 6; i++) {
       double angle = i * (pi / 3);
       pieces.add(CarromPiece(
@@ -113,7 +112,7 @@ class _CarromMatchState extends State<CarromMatch> with SingleTickerProviderStat
   void _updatePhysics() {
     if (_phase != GamePhase.moving) return;
     bool anyMoving = false;
-    final pocketR = _boardSize * 0.062;
+    final pocketR = _boardSize * 0.065;
     final margin = _boardSize * 0.075;
 
     setState(() {
@@ -122,26 +121,25 @@ class _CarromMatchState extends State<CarromMatch> with SingleTickerProviderStat
         if (p.velocity.distance > 0.1) {
           anyMoving = true;
           p.position += p.velocity;
-          p.velocity *= 0.984; // Friction coefficient
+          p.velocity *= 0.985; 
 
-          // Wall bounces
+          // Wall Collisions
           if (p.position.dx < margin + p.radius || p.position.dx > _boardSize - margin - p.radius) p.velocity = Offset(-p.velocity.dx, p.velocity.dy);
           if (p.position.dy < margin + p.radius || p.position.dy > _boardSize - margin - p.radius) p.velocity = Offset(p.velocity.dx, -p.velocity.dy);
 
-          // Pockets logic
+          // Pocketing
           final pks = [Offset(margin, margin), Offset(_boardSize-margin, margin), Offset(margin, _boardSize-margin), Offset(_boardSize-margin, _boardSize-margin)];
           for (var pk in pks) {
             if ((p.position - pk).distance < pocketR) {
               p.isPocketed = true;
               if (p.type == PieceType.white) _whiteInHoles++;
               if (p.type == PieceType.black) _blackInHoles++;
-              if (p.type == PieceType.striker) _handleFoul();
             }
           }
         }
       }
       
-      // Piece to Piece Collision
+      // Piece Collisions
       for (int i = 0; i < pieces.length; i++) {
         for (int j = i + 1; j < pieces.length; j++) {
           var a = pieces[i]; var b = pieces[j];
@@ -158,11 +156,6 @@ class _CarromMatchState extends State<CarromMatch> with SingleTickerProviderStat
     });
   }
 
-  void _handleFoul() {
-    // Return one piece if available
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Striker Foul!"), duration: Duration(seconds: 1)));
-  }
-
   void _checkStatus() {
     if (_whiteInHoles == 9) _gameOver("White Wins!");
     else if (_blackInHoles == 9) _gameOver("Black Wins!");
@@ -171,7 +164,7 @@ class _CarromMatchState extends State<CarromMatch> with SingleTickerProviderStat
 
   void _gameOver(String msg) {
     _phase = GamePhase.gameOver;
-    showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(msg), actions: [TextButton(onPressed: () {Navigator.pop(ctx); _initBoard(_boardSize);}, child: const Text("Play Again"))]));
+    showDialog(context: context, builder: (ctx) => AlertDialog(title: Text(msg), actions: [TextButton(onPressed: () {Navigator.pop(ctx); _initBoard(_boardSize);}, child: const Text("Restart"))]));
   }
 
   void _switchTurn() {
@@ -199,7 +192,7 @@ class _CarromMatchState extends State<CarromMatch> with SingleTickerProviderStat
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: const Color(0xFF1A1A1A),
       body: Column(
         children: [
           _buildScoreboard(),
@@ -219,7 +212,7 @@ class _CarromMatchState extends State<CarromMatch> with SingleTickerProviderStat
               ),
             ),
           ),
-          _buildTurnBanner(),
+          _buildBottomPanel(),
         ],
       ),
     );
@@ -227,40 +220,37 @@ class _CarromMatchState extends State<CarromMatch> with SingleTickerProviderStat
 
   Widget _buildScoreboard() {
     return Container(
-      padding: const EdgeInsets.only(top: 60, bottom: 20, left: 20, right: 20),
+      padding: const EdgeInsets.only(top: 60, bottom: 20, left: 30, right: 30),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _scoreCard("WHITE", _whiteInHoles, Colors.white),
-          _timerCircle(),
-          _scoreCard("BLACK", _blackInHoles, Colors.black),
+          _stat("WHITE", _whiteInHoles, Colors.white),
+          _timer(),
+          _stat("BLACK", _blackInHoles, Colors.black),
         ],
       ),
     );
   }
 
-  Widget _scoreCard(String title, int val, Color color) {
+  Widget _stat(String label, int count, Color color) {
     return Column(children: [
-      Text(title, style: TextStyle(color: Colors.grey[400], fontWeight: FontWeight.bold, fontSize: 12)),
-      const SizedBox(height: 8),
-      Text("$val", style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900)),
-      const Text("HOLES", style: TextStyle(fontSize: 10, color: Colors.blueGrey)),
+      Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
+      Text("$count", style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: color == Colors.white ? Colors.white : Colors.grey[400])),
     ]);
   }
 
-  Widget _timerCircle() {
+  Widget _timer() {
     return Stack(alignment: Alignment.center, children: [
-      SizedBox(width: 50, height: 50, child: CircularProgressIndicator(value: _timeLeft/30, color: Colors.amber, strokeWidth: 2)),
-      Text("$_timeLeft", style: const TextStyle(fontWeight: FontWeight.bold))
+      SizedBox(width: 50, height: 50, child: CircularProgressIndicator(value: _timeLeft/30, color: Colors.amber, strokeWidth: 3)),
+      Text("$_timeLeft", style: const TextStyle(fontWeight: FontWeight.bold)),
     ]);
   }
 
-  Widget _buildTurnBanner() {
-    bool isWhite = _currentTurn == PlayerTurn.whitePlayer;
+  Widget _buildBottomPanel() {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 25),
-      decoration: BoxDecoration(color: isWhite ? Colors.white.withOpacity(0.05) : Colors.black45),
-      child: Center(child: Text(isWhite ? "WHITE'S TURN" : "BLACK'S TURN", style: TextStyle(letterSpacing: 6, color: isWhite ? Colors.amber : Colors.grey[600], fontWeight: FontWeight.bold))),
+      child: Text(_currentTurn == PlayerTurn.whitePlayer ? "WHITE PLAYER" : "BLACK PLAYER", 
+        style: TextStyle(letterSpacing: 4, fontWeight: FontWeight.bold, color: Colors.amber[100])),
     );
   }
 }
@@ -275,104 +265,130 @@ class CarromUltraPainter extends CustomPainter {
     final w = size.width;
     final paint = Paint();
 
-    // 1. Heavy 3D Wooden Frame
-    paint.shader = LinearGradient(colors: [const Color(0xFF2D1B10), const Color(0xFF4E342E)], begin: Alignment.topLeft, end: Alignment.bottomRight).createShader(Rect.fromLTWH(0, 0, w, w));
+    // 1. Solid Beveled Frame
+    paint.shader = const LinearGradient(
+      colors: [Color(0xFF3E2723), Color(0xFF1B0000)],
+      begin: Alignment.topLeft, end: Alignment.bottomRight
+    ).createShader(Rect.fromLTWH(0, 0, w, w));
     canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, w, w), const Radius.circular(15)), paint);
 
-    // 2. Premium Surface (Beige/Plywood)
+    // 2. High-Grade Plywood Surface
     paint.shader = null;
     paint.color = const Color(0xFFF3D5A2);
     final margin = w * 0.075;
     canvas.drawRect(Rect.fromLTWH(margin, margin, w - margin*2, w - margin*2), paint);
 
-    // 3. Ultra Realistic Board Markings (The Image pattern)
-    _drawBoardGraphics(canvas, size);
+    // 3. Realistic Board Markings (The Arcs, Arrows, and Baselines)
+    _drawBoardDesign(canvas, w);
 
-    // 4. Pockets (Depth and Rim)
-    final pocketR = w * 0.062;
-    final holePos = [Offset(margin, margin), Offset(w-margin, margin), Offset(margin, w-margin), Offset(w-margin, w-margin)];
-    for (var pos in holePos) {
-      paint.shader = RadialGradient(colors: [Colors.black, Colors.grey[900]!]).createShader(Rect.fromCircle(center: pos, radius: pocketR));
-      canvas.drawCircle(pos, pocketR, paint);
-      paint.shader = null; paint.style = PaintingStyle.stroke; paint.color = Colors.black45;
-      canvas.drawCircle(pos, pocketR, paint);
+    // 4. Pockets (Depth and Shadows)
+    final pR = w * 0.065;
+    final hPos = [Offset(margin, margin), Offset(w-margin, margin), Offset(margin, w-margin), Offset(w-margin, w-margin)];
+    for (var pos in hPos) {
+      paint.shader = RadialGradient(colors: [Colors.black, Colors.grey[900]!]).createShader(Rect.fromCircle(center: pos, radius: pR));
+      canvas.drawCircle(pos, pR, paint);
+      paint.shader = null; paint.style = PaintingStyle.stroke; paint.color = Colors.black45; paint.strokeWidth = 2;
+      canvas.drawCircle(pos, pR, paint);
       paint.style = PaintingStyle.fill;
     }
 
-    // 5. 3D Pieces (Shadows and Gradients)
+    // 5. 3D SOLID RINGED PIECES (Design Match)
     for (var p in pieces) {
       if (p.isPocketed) continue;
-      
-      // Drop shadow for 3D depth
-      canvas.drawCircle(p.position + const Offset(2.5, 2.5), p.radius, Paint()..color = Colors.black38..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5));
-      
-      Color c = p.type == PieceType.white ? Colors.white : (p.type == PieceType.black ? const Color(0xFF1A1A1A) : (p.type == PieceType.queen ? Colors.red[800]! : Colors.blueAccent));
-      
-      paint.shader = RadialGradient(colors: [c, c.withOpacity(0.7)], center: const Alignment(-0.35, -0.35)).createShader(Rect.fromCircle(center: p.position, radius: p.radius));
-      canvas.drawCircle(p.position, p.radius, paint);
-      
-      // Piece detail
-      paint.shader = null; paint.style = PaintingStyle.stroke; paint.strokeWidth = 1;
-      paint.color = p.type == PieceType.black ? Colors.white12 : Colors.black12;
-      canvas.drawCircle(p.position, p.radius * 0.7, paint);
-      paint.style = PaintingStyle.fill;
+      _drawPiece(canvas, p);
     }
 
-    // 6. Aiming Guide
+    // 6. Aim Line
     if (drag != null) {
       final s = pieces.firstWhere((p) => p.type == PieceType.striker);
-      paint.shader = LinearGradient(colors: [Colors.amber, Colors.amber.withOpacity(0)]).createShader(Rect.fromPoints(s.position, s.position + (s.position - drag!)));
-      paint.strokeWidth = 3; paint.style = PaintingStyle.stroke;
+      paint.color = Colors.white54; paint.strokeWidth = 2; paint.style = PaintingStyle.stroke;
       canvas.drawLine(s.position, s.position + (s.position - drag!), paint);
     }
   }
 
-  void _drawBoardGraphics(Canvas canvas, Size size) {
-    final w = size.width;
+  void _drawPiece(Canvas canvas, CarromPiece p) {
+    final paint = Paint();
+    
+    // Contact Shadow
+    canvas.drawCircle(p.position + const Offset(1.5, 1.5), p.radius, Paint()..color = Colors.black45..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5));
+    
+    Color base;
+    switch (p.type) {
+      case PieceType.white: base = const Color(0xFFF5F5F5); break;
+      case PieceType.black: base = const Color(0xFF212121); break;
+      case PieceType.queen: base = const Color(0xFFFF4081); break;
+      case PieceType.striker: base = const Color(0xFF1E88E5); break;
+    }
+
+    // Main Body Gradient
+    paint.shader = RadialGradient(
+      colors: [base.withOpacity(1.0), base.withOpacity(0.8)],
+      center: const Alignment(-0.3, -0.3),
+    ).createShader(Rect.fromCircle(center: p.position, radius: p.radius));
+    paint.style = PaintingStyle.fill;
+    canvas.drawCircle(p.position, p.radius, paint);
+
+    // Specular Highlight (The Glint)
+    paint.shader = null;
+    paint.color = Colors.white.withOpacity(0.4);
+    canvas.drawCircle(p.position + Offset(-p.radius*0.35, -p.radius*0.35), p.radius * 0.2, paint);
+
+    // 3D Concentric Rings (As seen in reference image)
+    paint.style = PaintingStyle.stroke;
+    paint.strokeWidth = 1.2;
+    paint.color = p.type == PieceType.black ? Colors.white12 : Colors.black12;
+    canvas.drawCircle(p.position, p.radius * 0.8, paint);
+    canvas.drawCircle(p.position, p.radius * 0.6, paint);
+    canvas.drawCircle(p.position, p.radius * 0.4, paint);
+    canvas.drawCircle(p.position, p.radius * 0.2, paint);
+    paint.style = PaintingStyle.fill;
+  }
+
+  void _drawBoardDesign(Canvas canvas, double w) {
     final paint = Paint()..color = Colors.black87..style = PaintingStyle.stroke..strokeWidth = 1.2;
 
-    // Baselines (Double lines with Red circles like in your photo)
-    final bLine1 = w * 0.185; final bLine2 = w * 0.815;
-    _drawBaseLine(canvas, w, bLine1);
-    _drawBaseLine(canvas, w, bLine2);
-    _drawSideBaseLine(canvas, w, bLine1);
-    _drawSideBaseLine(canvas, w, bLine2);
-
-    // Center Flower Pattern
-    paint.style = PaintingStyle.stroke; paint.color = Colors.black54;
+    // Center Flower
     canvas.drawCircle(Offset(w*0.5, w*0.5), w*0.13, paint);
     canvas.drawCircle(Offset(w*0.5, w*0.5), w*0.135, paint);
-    
-    // Diagonal Corner Arrows
-    _drawCornerArrows(canvas, w);
+    paint.color = Colors.red[900]!;
+    paint.style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(w*0.5, w*0.5), w*0.035, paint);
+
+    // Baselines & Arcs (Design Match)
+    _drawSideGraphics(canvas, w, 0); // Bottom
+    _drawSideGraphics(canvas, w, pi / 2); // Left
+    _drawSideGraphics(canvas, w, pi); // Top
+    _drawSideGraphics(canvas, w, 3 * pi / 2); // Right
   }
 
-  void _drawBaseLine(Canvas canvas, double w, double y) {
-    final paint = Paint()..color = Colors.black87..strokeWidth = 1.5;
+  void _drawSideGraphics(Canvas canvas, double w, double rotation) {
+    canvas.save();
+    canvas.translate(w / 2, w / 2);
+    canvas.rotate(rotation);
+    canvas.translate(-w / 2, -w / 2);
+
+    final paint = Paint()..color = Colors.black87..style = PaintingStyle.stroke..strokeWidth = 1.2;
+    final y = w * 0.815;
+
+    // Double Baseline
     canvas.drawLine(Offset(w*0.25, y-w*0.012), Offset(w*0.75, y-w*0.012), paint);
     canvas.drawLine(Offset(w*0.25, y+w*0.012), Offset(w*0.75, y+w*0.012), paint);
-    // Red circles at ends
-    paint.style = PaintingStyle.fill; paint.color = Colors.red[900]!;
+
+    // Baseline End Circles
+    paint.style = PaintingStyle.fill; paint.color = Colors.red[800]!;
     canvas.drawCircle(Offset(w*0.25, y), w*0.018, paint);
     canvas.drawCircle(Offset(w*0.75, y), w*0.018, paint);
-  }
 
-  void _drawSideBaseLine(Canvas canvas, double w, double x) {
-     final paint = Paint()..color = Colors.black87..strokeWidth = 1.5;
-     canvas.drawLine(Offset(x-w*0.012, w*0.25), Offset(x-w*0.012, w*0.75), paint);
-     canvas.drawLine(Offset(x+w*0.012, w*0.25), Offset(x+w*0.012, w*0.75), paint);
-     paint.style = PaintingStyle.fill; paint.color = Colors.red[900]!;
-     canvas.drawCircle(Offset(x, w*0.25), w*0.018, paint);
-     canvas.drawCircle(Offset(x, w*0.75), w*0.018, paint);
-  }
-
-  void _drawCornerArrows(Canvas canvas, double w) {
-    final paint = Paint()..color = Colors.black45..strokeWidth = 1;
-    // Four corner diagonal lines
-    canvas.drawLine(Offset(w*0.14, w*0.14), Offset(w*0.35, w*0.35), paint);
-    canvas.drawLine(Offset(w*0.86, w*0.14), Offset(w*0.65, w*0.35), paint);
-    canvas.drawLine(Offset(w*0.14, w*0.86), Offset(w*0.35, w*0.65), paint);
-    canvas.drawLine(Offset(w*0.86, w*0.86), Offset(w*0.65, w*0.65), paint);
+    // Corner Arcs & Arrows
+    paint.style = PaintingStyle.stroke; paint.color = Colors.black87;
+    // The "U" shape arc near pockets
+    final arcRect = Rect.fromCircle(center: Offset(w*0.19, w*0.81), radius: w*0.08);
+    canvas.drawArc(arcRect, 0, pi, false, paint);
+    
+    // Arrows pointing to pockets
+    canvas.drawLine(Offset(w*0.13, w*0.87), Offset(w*0.08, w*0.92), paint);
+    
+    canvas.restore();
   }
 
   @override
