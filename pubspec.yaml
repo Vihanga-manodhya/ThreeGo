@@ -10,9 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
   cupertino_icons: ^1.0.8
-  # Notice how we removed the 3D packages from here!
+  audioplayers: ^6.5.1 # Fixed: Removed the duplicate entry
 
 dev_dependencies:
   flutter_test:
@@ -21,4 +20,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # And we removed the 1.glb asset from here!
+  assets:
+    - assets/tok.mp3 # Ensure your file is at: your_project/assets/tok.mp3
